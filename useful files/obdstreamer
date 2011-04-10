@@ -1,0 +1,112 @@
+#! /bin/bash
+
+#Set up device variables
+
+#myObdDeviceMAC is used for Bluetooth Communications only. 
+myObdDeviceMAC=00:0D:18:B1:09:DA 
+myObdComPort="/dev/rfcomm0"
+
+
+#COMM=Bluetooth, USB, or device ie.  /dev/ttyS0 /dev/ttyS1
+COMM=/dev/ttyS0
+####sudo check####
+if [ "$(id -u)" != "0" ]; then
+	echo "You do not have sufficient privlidges to run this script. Try again with sudo configure"
+	exit 1
+fi
+
+# 
+exitNext=""
+
+
+#ExitPoint provides a way out of the program in the event of error if the exitNext variable is set.
+ExitPoint () {
+	test exitNext = 1 && echo "Could not connect to Serial Device, possible causes are bad communication or no connection"
+	test exitNext = 2 && echo "please install package bluez-utils"
+	echo "$exitNext"
+	test "$exitNext" != "" && exit $exitNext
+}
+
+#checkDepends verifies packages are in place
+checkDepends() {
+	echo "Checking Dependencies"
+	test `which hcitool`>/dev/null || exitNext=2
+	ExitPoint
+	echo "Dependencies Met"
+}
+
+#prepCom prepares the com port by initializing the bluetooth device and the serial port
+prepCom () {
+#initialize port
+	echo "Initializing Com Port"
+	hcitool cc $myObdDeviceMAC 2>&1 /dev/null &&  hcitool auth $myObdDeviceMAC 2>&1 /dev/null || exitNext=1
+	ExitPoint
+#connect to port
+	echo "Connecting rfcomm port to ELM device"
+	rfcomm connect 0 &
+#prepare port for data communications
+	echo "Waiting 2 seconds for connection."
+	sleep 2
+	echo "Setting port specs"
+	stty -F "$myObdComPort" speed 9600 ignbrk -raw -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok echoctl -echoke time 5 min 1 line 0
+	echo "Linking $myObdComPort to /dev/obd"
+}
+
+linkCom () {
+	test ! -L "/dev/obd" && ln -s "$myObdComPort" /dev/obd
+}
+
+
+mainLoop () {
+#mainLoop will read 1 charactor at a time until it sees ">", then it will display the cooked data and let the user input his/her data.
+	echo "Opening /dev/obd port for writing"
+ 	echo "type '!quit' to exit"
+ 	userinput="atz"
+        cat /dev/obd >./datastream &
+#Infinate Loop until !quit is entered by user
+        test -f ./obdstreamercount && x=`cat ./obdstreamercount` || x=1
+ 	while [ 1 ]
+ 	do 
+		echo -e atz"\r\n" > "/dev/obd"
+        	sleep 1
+		echo -e 080001"\r\n" > "/dev/obd"
+		sleep 1
+#Read line and then process to OBD unit
+   
+        	while [ $x -lt 9999 ] 
+		do
+		        send=a
+			send=$x
+			test $x -lt 10 && send="0$send"
+			test $x -lt 100 && send="0$send"
+			test $x -lt 1000 && send="0$send"
+	
+        	        userinput=`echo "08$send""0000" | sed s/'s'/''/g`
+			echo $userinput
+ 			#sleep .1
+			((++x))
+	
+ 			beginstring=${#char}         
+			echo $userinput
+			echo -e ${userinput}"\r\n" > "/dev/obd"
+#Pause for a reset
+ 			test "$userinput" = "atz" && sleep 5
+#Exit on a user !quit
+ 			test "$userinput" = "!quit" && exitNext=0 && ExitPoint
+ 	#sleep 2.3 
+ 			mydata=""
+			echo $x > ./obdstreamercount
+       		done
+	done
+}
+
+#Check Dependencies
+checkDepends
+#Prepare communications
+test "$COMM" = "Bluetooth" && prepCom
+linkCom
+#Main I/O loop
+mainLoop
+#In case the program randomly exits the read loop
+exitNext=0
+ExitPoint

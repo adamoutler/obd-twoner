@@ -1,0 +1,118 @@
+#! /bin/bash
+
+####sudo check####
+if [ "$(id -u)" != "0" ]; then
+	echo "You do not have sufficient privlidges to run this script. Try again with sudo configure"
+	exit 1
+fi
+
+
+
+####set up devices####
+myObdDeviceMAC=00:0D:18:B1:09:DA 
+myObdComPort="/dev/rfcomm0"
+exitNext=""
+
+
+#ExitPoint provides a way out of the program in the event of error if the exitNext variable is set.
+ExitPoint () {
+test exitNext = 1 && echo "Could not connect to Serial Device, possible causes are bad communication or no connection"
+test exitNext = 2 && echo "please install package bluez-utils  apt-get install bluez-utils"
+echo "$exitNext"
+test "$exitNext" != "" && exit $exitNext
+}
+
+
+#checkDepends verifies packages are in place
+checkDepends() {
+echo "Checking Dependencies"
+test `which hcitool`>/dev/null || exitNext=2
+ExitPoint
+echo "Dependencies Met"
+}
+
+#prepCom prepares the com port by initializing the bluetooth device and the serial port
+prepCom () {
+#initialize port
+echo "Initializing Com Port"
+hcitool cc $myObdDeviceMAC 2>&1 /dev/null &&  hcitool auth $myObdDeviceMAC 2>&1 /dev/null || exitNext=1
+ExitPoint
+#connect to port
+echo "Connecting rfcomm port to ELM device"
+rfcomm connect 0 &
+#prepare port for data communications
+echo "Waiting 2 seconds for connection."
+sleep 2
+echo "Setting port specs"
+stty -F "$myObdComPort" speed 9600 ignbrk -raw -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok echoctl -echoke time 5 min 1 line 0
+echo "Linking $myObdComPort to /dev/obd"
+ln -s "$myObdComPort" /dev/obd
+
+echo -e "atz\r" > /dev/obd
+sleep 4
+
+
+
+}
+
+
+mainLoop () {
+ echo -e "0100\r" > /dev/obd
+ echo "Opening /dev/obd port for writing"
+ echo "check for flashing cruise control light"
+ echo "OBD 2ner console active.  Please wait."
+ echo "If you see 'unable to connect' or 'stopped' press Ctrl + c"
+ sleep 5
+
+ SaveFile="./mode06"
+ preInput="06"
+ startFrom=-1
+ #test -f ./countSave && startFrom=`cat ./countSave`
+ let endAt=$startFrom+1000
+ postInput=""
+ count=$startFrom
+ cat -A /dev/obd| tee -a $SaveFile &
+ echo -e \\n"Beginning diagnostic scan in 5"
+ sleep 1
+ echo "4.."
+ sleep 1
+ echo "3.." 
+ sleep 1
+ echo "2.."
+ sleep 1
+ echo "1.."
+ sleep 1
+ echo -e "Beginning Scan.  Press Ctrl-C to terminate"\\n\\n
+
+
+
+
+ while [ $count -le $endAt ]
+ do 
+   ((++count))
+   hex=`echo "obase=16; "$count | bc`
+   #echo $count > ./countSave
+   if [ "${#hex}" != "2" ] && [ "${#hex}" != "4" ]  && [ "${#hex}" != "6" ] && [ "${#hex}" != "8" ]; then
+      addZero="0"
+   else
+      addZero=""
+   fi
+   echo -e ${preInput}$addZero${hex}${postInput}"\r" > "/dev/obd" 
+   sleep .38
+done
+      
+
+}
+
+
+#Check Dependencies
+checkDepends
+#Prepare communications
+prepCom
+mainLoop
+
+exitNext=0
+ExitPoint
+
+
+

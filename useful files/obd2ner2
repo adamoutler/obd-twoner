@@ -1,0 +1,85 @@
+#! /bin/bash
+
+####sudo check####
+if [ "$(id -u)" != "0" ]; then
+	echo "You do not have sufficient privlidges to run this script. Try again with sudo configure"
+	exit 1
+fi
+
+
+
+####set up devices####
+myObdDeviceMAC=00:0D:18:B1:09:DA 
+myObdComPort="/dev/ttyUSB0"
+exitNext=""
+
+
+#ExitPoint provides a way out of the program in the event of error if the exitNext variable is set.
+ExitPoint () {
+test exitNext = 1 && echo "Could not connect to Serial Device, possible causes are bad communication or no connection"
+test exitNext = 2 && echo "please install package bluez-utils"
+echo "$exitNext"
+test "$exitNext" != "" && exit $exitNext
+}
+
+
+#checkDepends verifies packages are in place
+checkDepends() {
+echo "Checking Dependencies"
+test `which hcitool`>/dev/null || exitNext=2
+ExitPoint
+echo "Dependencies Met"
+}
+
+#prepCom prepares the com port by initializing the bluetooth device and the serial port
+prepCom () {
+#initialize port
+echo "Initializing Com Port"
+hcitool cc $myObdDeviceMAC 2>&1 /dev/null &&  hcitool auth $myObdDeviceMAC 2>&1 /dev/null || exitNext=1
+ExitPoint
+#connect to port
+echo "Connecting rfcomm port to ELM device"
+rfcomm connect 0 &
+#prepare port for data communications
+echo "Waiting 2 seconds for connection."
+sleep 2
+}
+initializePort(){
+echo "Setting port specs"
+stty -F "$myObdComPort" speed 9600 ignbrk -raw -brkint -icrnl -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok echoctl -echoke time 5 min 1 line 0
+echo "Linking $myObdComPort to /dev/obd"
+test ! -s "/dev/obd" && ln -sf "$myObdComPort" /dev/obd
+}
+
+
+mainLoop () {
+
+ echo "Opening /dev/obd port for writing"
+ cat -A /dev/obd | sudo tee ./stream1 &
+ 
+
+ echo "OBD 2ner console active>"
+ while [ 1 ]
+ do 
+  read userinput 
+  echo -e ${userinput}"\r" > "/dev/obd" 
+  
+  #DATA="`xxd -ps -l 1 "$myObdComPort" `"
+  #echo $DATA
+ done
+
+}
+
+
+#Check Dependencies
+checkDepends
+#Prepare communications
+#prepCom
+initializePort
+mainLoop
+
+exitNext=0
+ExitPoint
+
+
+

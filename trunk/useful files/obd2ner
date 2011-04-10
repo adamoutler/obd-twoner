@@ -1,0 +1,61 @@
+#! /bin/bash
+
+####set up devices####
+myObdDeviceMAC=00:0D:18:B1:09:DA 
+myObdComPort="/dev/rfcomm0"
+
+ 
+#This funb citon provides all exit points for the program
+ExitPoint (){
+test exitNext = 1 && echo "Could not connect to Serial Device, possible causes are bad communication or no connection"
+test exitNext != "" && exit $exitNext
+{
+
+
+checkDepends() {
+
+####check depends####
+test `which hcitool` && echo "dependencies met" || echo "please install package bluez-utils"
+ExitPoint
+}
+
+prepCom () {
+#initialize port
+
+sudo hcitool cc $myObdDeviceMAC && sudo hcitool auth $myObdDeviceMAC || exitNext=1
+ExitPoint
+#connect to port
+sudo rfcomm connect 0 &
+#prepare port for data communications
+
+#DATA="`xxd -ps -l 5 "$myObdComPort" `"&
+
+stty -F "$myObdComPort"  raw speed 9600
+
+}
+
+
+mainLoop () {
+ 
+ while [1]
+ do 
+ 	READ=`dd if=/dev/ttyS1 count=1`
+	echo $READ
+ 
+}
+
+
+
+
+#Check Dependencies
+checkDepends
+#Prepare communications
+prepCom
+
+mainLoop
+
+exitNext=0
+ExitPoint
+
+
+

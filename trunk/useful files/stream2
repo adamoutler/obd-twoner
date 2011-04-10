@@ -1,0 +1,12 @@
+Checking Dependencies
+
+Dependencies Met
+Initializing Com Port
+
+Connecting rfcomm port to ELM device
+Waiting 2 seconds for connection.
+Setting port specs
+9600
+Linking /dev/rfcomm0 to /dev/obd
+Opening /dev/obd port for writing
+OBD 2ner console active>
